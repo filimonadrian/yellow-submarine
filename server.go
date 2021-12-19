@@ -80,8 +80,8 @@ func handleMoveSubmarine(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(os.Stdout, "%+v", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	} else {
-		submarine.X = newSubmarine.X
-		submarine.Y = newSubmarine.Y
+		submarine.X += newSubmarine.X
+		submarine.Y += newSubmarine.Y
 		fmt.Fprintf(os.Stdout, "Submarine moved to: %+v\n", submarine)
 		w.WriteHeader(http.StatusOK)
 	}
