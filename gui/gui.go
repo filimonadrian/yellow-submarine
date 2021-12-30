@@ -1,16 +1,39 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
 	"github.com/mattn/go-runewidth"
 )
 
+type GuiObject struct {
+	Type string `json:"type,omitempty"`
+	X    int    `json:"x,omitempty"`
+	Y    int    `json:"y,omitempty"`
+}
+
+var (
+	connected      bool
+	connectedSync  sync.Mutex
+	tcpConn        net.Conn
+	fish           []GuiObject
+	submarine      GuiObject
+	artifact       GuiObject
+	fishStyle      tcell.Style
+	artifactStyle  tcell.Style
+	submarineStyle tcell.Style
+)
+
 var defStyle tcell.Style
-var submarine = []string{
+var submarineDesign = []string{
 	"          __|___",
 	"         /      \\",
 	" _______/    O   \\_______",
@@ -19,11 +42,67 @@ var submarine = []string{
 	"  \\___________________________/  I"}
 
 const (
-	fish = "><(((*>"
-	artifact = "[*]"
+	fishDesign      = "><(((*>"
+	artifactDesign  = "[*]"
 	submarineHeight = 6
 	submarineLength = 35
 )
+
+func initTcpClient() {
+	// fmt.Println("Client started...")
+	for {
+		connectedSync.Lock()
+		alreadyConnected := connected
+		connectedSync.Unlock()
+		if !alreadyConnected {
+			conn, err := net.Dial("tcp", "127.0.0.1:8000")
+			if err != nil {
+				fmt.Println(err.Error())
+				time.Sleep(time.Duration(5) * time.Second)
+				continue
+			}
+			tcpConn = conn
+			// fmt.Println(conn.RemoteAddr().String() + ": connected")
+			connectedSync.Lock()
+			connected = true
+			connectedSync.Unlock()
+			go receiveData(tcpConn)
+		}
+		time.Sleep(time.Duration(5) * time.Second)
+	}
+}
+
+func receiveData(conn net.Conn) {
+	for {
+		message, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			// fmt.Println(conn.RemoteAddr().String() + ": disconnected")
+			conn.Close()
+			connectedSync.Lock()
+			connected = false
+			connectedSync.Unlock()
+			// fmt.Println(conn.RemoteAddr().String() + ": end receiving data")
+			return
+		}
+
+		var newObj GuiObject
+		err = json.Unmarshal([]byte(message), &newObj)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+
+		switch {
+		case newObj.Type == "submarine":
+			submarine.X = newObj.X
+			submarine.Y = newObj.Y
+
+		case newObj.Type == "artifact":
+			artifact = newObj
+		case newObj.Type == "fish":
+			fish = append(fish, newObj)
+		}
+	}
+}
 
 func emitStr(s tcell.Screen, x, y int, style tcell.Style, str string) {
 	for _, c := range str {
@@ -39,60 +118,84 @@ func emitStr(s tcell.Screen, x, y int, style tcell.Style, str string) {
 	}
 }
 
-func drawFish(s tcell.Screen, x, y int) {
+func drawFish(s tcell.Screen, fish []GuiObject) {
 
-	style := tcell.StyleDefault.
-		Foreground(tcell.ColorGreen)
-	emitStr(s, x, y, style, fish)
+	for _, f := range fish {
+		emitStr(s, f.X, f.Y, fishStyle, fishDesign)
+	}
 }
 
-func drawArtifact(s tcell.Screen, x, y int) {
+func drawArtifact(s tcell.Screen, artifact GuiObject) {
 
-	style := tcell.StyleDefault.
-		Foreground(tcell.ColorDarkRed).Background(tcell.ColorRed)
-	emitStr(s, x, y, style, artifact)
+	emitStr(s, artifact.X, artifact.Y, artifactStyle, artifactDesign)
 }
 
+func drawSubmarine(s tcell.Screen, submarine GuiObject) {
+	screenLine := submarine.Y
 
-func drawSubmarine(s tcell.Screen, x, y int) {
+	for _, submarineLine := range submarineDesign {
+		emitStr(s, submarine.X, screenLine, submarineStyle, submarineLine)
 
-	style := tcell.StyleDefault.
-		Foreground(tcell.ColorYellow)
-
-	screenLine := y
-	for _, submarineLine := range submarine {
-		emitStr(s, x, screenLine, style, submarineLine)
 		screenLine += 1
 	}
 }
 
-func drawSelect(s tcell.Screen, x1, y1, x2, y2 int, sel bool) {
+func render(s tcell.Screen) {
+	s.Clear()
+	drawFish(s, fish)
+	drawArtifact(s, artifact)
+	drawSubmarine(s, submarine)
+	s.Show()
+}
 
-	if y2 < y1 {
-		y1, y2 = y2, y1
+func renderLoop(s tcell.Screen, quit <-chan struct{}) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			render(s)
+		case <-quit:
+			return
+		}
 	}
-	if x2 < x1 {
-		x1, x2 = x2, x1
-	}
-	for row := y1; row <= y2; row++ {
-		for col := x1; col <= x2; col++ {
-			mainc, combc, style, width := s.GetContent(col, row)
-			if style == tcell.StyleDefault {
-				style = defStyle
+}
+
+func eventLoop(s tcell.Screen, quit chan struct{}) {
+	defer close(quit)
+
+	for {
+
+		switch ev := s.PollEvent().(type) {
+		case *tcell.EventKey:
+			switch ev.Key() {
+			case tcell.KeyEscape, tcell.KeyEnter, tcell.KeyCtrlC:
+				close(quit)
+				s.Fini()
+				os.Exit(0)
+			case tcell.KeyCtrlL:
+				s.Sync()
 			}
-			style = style.Reverse(sel)
-			s.SetContent(col, row, mainc, combc, style)
-			col += width - 1
+		case *tcell.EventResize:
+			s.Sync()
 		}
 	}
 }
 
 func main() {
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	artifact.X = -1
+	artifact.Y = -1
+	quit := make(chan struct{})
+
+	fishStyle = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	submarineStyle = tcell.StyleDefault.Foreground(tcell.ColorYellow)
+	artifactStyle = tcell.StyleDefault.
+		Foreground(tcell.ColorDarkRed).
+		Background(tcell.ColorRed)
+	defStyle = tcell.StyleDefault.
+		Background(tcell.ColorReset).
+		Foreground(tcell.ColorReset)
 
 	encoding.Register()
 
@@ -105,53 +208,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", e)
 		os.Exit(1)
 	}
-	defStyle = tcell.StyleDefault.
-		Background(tcell.ColorReset).
-		Foreground(tcell.ColorReset)
 	s.SetStyle(defStyle)
-	s.EnableMouse()
-
-	s.EnablePaste()
+	s.HideCursor()
 	s.Clear()
 
-	for {
-		
-		// w, h = s.Size()
-		
-		// // always clear any old selection box
-		// if ox >= 0 && oy >= 0 && bx >= 0 {
-			// 	drawSelect(s, ox, oy, bx, by, false)
-			// }
-		
-		drawFish(s, 10, 15)
-		drawArtifact(s, 11, 16)
-		drawSubmarine(s, 0, 0)
+	go initTcpClient()
 
+	go renderLoop(s, quit)
+	eventLoop(s, quit)
+}
 
-		switch ev := s.PollEvent().(type) {
-		case *tcell.EventResize:
-			s.Sync()
-			drawFish(s, 10, 15)
-			drawArtifact(s, 11, 16)
-			drawSubmarine(s, 0, 0)
-		case *tcell.EventKey:
-			if ev.Key() == tcell.KeyEscape {
-				s.Fini()
-				os.Exit(0)
-			}
-		}
+func printStruct() {
+	fmt.Printf("%+v\n", submarine)
+	fmt.Printf("%+v\n", artifact)
+	fmt.Printf("%+v\n", fish)
+	fmt.Printf("\n")
 
-		// switch ev := ev.(type) {
-		// case *tcell.EventResize:
-		// 	s.Sync()
-		// 	s.SetContent(w-1, h-1, 'R', nil, st)
-		
-		// 		default:
-		// 	s.SetContent(w-1, h-1, 'X', nil, st)
-		// }
-
-		// if ox >= 0 && bx >= 0 {
-		// 	drawSelect(s, ox, oy, bx, by, true)
-		// }
-	}
 }
