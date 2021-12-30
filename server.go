@@ -4,9 +4,11 @@ import (
 	// "io"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -180,6 +182,8 @@ func initTcpServer() {
 		fmt.Println("Error listening to client: " + err.Error())
 	}
 	tcpConn = conn
+
+	sendData(tcpConn, getGuiObject("submarine", submarine.X, submarine.Y))
 	fmt.Println(conn.RemoteAddr().String() + ": client connected")
 }
 
@@ -191,10 +195,14 @@ func sendData(conn net.Conn, data string) {
 	}
 }
 
-func main() {
+func generateRandom(maxNum int) int {
+	s1 := rand.NewSource(time.Now().UnixNano())
+	r1 := rand.New(s1)
 
-	// wg := new(sync.WaitGroup)
-	// wg.Add(2)
+	return r1.Intn(maxNum)
+}
+
+func main() {
 
 	headersOk := handlers.AllowedHeaders([]string{"Authorization"})
 	originsOk := handlers.AllowedOrigins([]string{"*"})
@@ -205,8 +213,8 @@ func main() {
 
 	fish = make([]Object, 0)
 	submarine = Object{
-		X: 10,
-		Y: 15,
+		X: generateRandom(50),
+		Y: generateRandom(50),
 	}
 
 	router.HandleFunc("/api/submarine", handleGetSubmarine).Methods("GET")
