@@ -221,7 +221,3 @@ func main() {
 	fmt.Printf("HTTP Server is running at http://localhost%s\n", httpServerPort)
 	http.ListenAndServe(httpServerPort, handlers.CORS(originsOk, headersOk, methodsOk)(router))
 }
-
-// - in gui:
-// 	- trebuie sa primesc datele corect
-// 	- desenez datele pe care le primesc pe socket
