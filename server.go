@@ -18,24 +18,20 @@ const (
 	tcpServerPort  = ":8000"
 )
 
-type Submarine struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+type Object struct {
+	X int `json:"x,omitempty"`
+	Y int `json:"y,omitempty"`
 }
 
-type Artifact struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+type GuiObject struct {
+	Type string `json:"type,omitempty"`
+	X    int    `json:"x,omitempty"`
+	Y    int    `json:"y,omitempty"`
 }
 
-type Fish struct {
-	X int `json:"x"`
-	Y int `json:"y"`
-}
-
-var submarine Submarine
-var artifact Artifact
-var fish []Fish
+var submarine Object
+var artifact Object
+var fish []Object
 var tcpConn net.Conn
 
 func toJson(v interface{}) string {
@@ -45,6 +41,16 @@ func toJson(v interface{}) string {
 		return ""
 	}
 	return string(msg)
+}
+
+func getGuiObject(objType string, x, y int) string {
+	obj := GuiObject{
+		Type: objType,
+		X:    x,
+		Y:    y,
+	}
+
+	return toJson(obj)
 }
 
 func handleGetSubmarine(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +73,7 @@ func handleMoveSubmarine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newSubmarine Submarine
+	var newSubmarine Object
 	decoder := json.NewDecoder(r.Body)
 
 	err := decoder.Decode(&newSubmarine)
@@ -77,10 +83,12 @@ func handleMoveSubmarine(w http.ResponseWriter, r *http.Request) {
 	} else {
 		submarine.X += newSubmarine.X
 		submarine.Y += newSubmarine.Y
+
 		fmt.Fprintf(os.Stdout, "Submarine moved to: %+v\n", submarine)
 		w.WriteHeader(http.StatusOK)
 
-		sendData(tcpConn, "UpdateSubmarine:"+toJson(submarine))
+		sendData(tcpConn, getGuiObject("submarine", submarine.X, submarine.Y))
+
 	}
 
 	json.NewEncoder(w).Encode(submarine)
@@ -93,23 +101,31 @@ func handleUpdateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newArtifact Artifact
+	var newArtifact Object
 	decoder := json.NewDecoder(r.Body)
 
 	err := decoder.Decode(&newArtifact)
+
 	if err != nil {
 		fmt.Fprintf(os.Stdout, "%+v", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	} else {
-		artifact.X = newArtifact.X
-		artifact.Y = newArtifact.Y
-		fmt.Fprintf(os.Stdout, "Artifact placed at: %+v\n", artifact)
-		w.WriteHeader(http.StatusOK)
+		if toJson(newArtifact) == "{}" {
+			artifact.X = -1
+			artifact.Y = -1
+			fmt.Fprintf(os.Stdout, "Artifact does not appear on our radars anymore!\n")
 
-		sendData(tcpConn, "UpdateArtifact:"+toJson(artifact))
+		} else {
+			artifact.X = newArtifact.X
+			artifact.Y = newArtifact.Y
+			fmt.Fprintf(os.Stdout, "Artifact placed at: %+v\n", artifact)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		sendData(tcpConn, getGuiObject("artifact", artifact.X, artifact.Y))
 	}
 
-	json.NewEncoder(w).Encode(artifact)
+	json.NewEncoder(w).Encode(newArtifact)
 }
 
 func handleAddFish(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +136,7 @@ func handleAddFish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newFish Fish
+	var newFish Object
 	decoder := json.NewDecoder(r.Body)
 
 	err := decoder.Decode(&newFish)
@@ -130,11 +146,12 @@ func handleAddFish(w http.ResponseWriter, r *http.Request) {
 	} else {
 		if len(fish) < maxFish {
 			fish = append(fish, newFish)
+
 			fmt.Fprintf(os.Stdout, "New Fish: %+v\n", newFish)
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(newFish)
 
-			sendData(tcpConn, "Newfish:"+toJson(newFish))
+			sendData(tcpConn, getGuiObject("fish", newFish.X, newFish.Y))
 
 		} else {
 			msg := "Maximum number of fish excedeed\n"
@@ -153,7 +170,7 @@ func commonMiddleware(next http.Handler) http.Handler {
 
 func initTcpServer() {
 	fmt.Println("TCP server started...")
-	ln, err := net.Listen("tcp", ":8000")
+	ln, err := net.Listen("tcp", tcpServerPort)
 	if err != nil {
 		fmt.Println("Error starting socket server: " + err.Error())
 	}
@@ -186,8 +203,8 @@ func main() {
 	var router = mux.NewRouter()
 	router.Use(commonMiddleware)
 
-	fish = make([]Fish, 0)
-	submarine = Submarine{
+	fish = make([]Object, 0)
+	submarine = Object{
 		X: 10,
 		Y: 15,
 	}
@@ -199,13 +216,12 @@ func main() {
 	router.HandleFunc("/api/fish", handleGetFish).Methods("GET")
 	router.HandleFunc("/api/fish/add", handleAddFish).Methods("POST")
 
-	// tcpConn = initTcpServer()
-	// if tcpConn == nil {
-	// 	return
-	// }
-
 	go initTcpServer()
 
-	fmt.Printf("Server is running at http://localhost%s\n", httpServerPort)
+	fmt.Printf("HTTP Server is running at http://localhost%s\n", httpServerPort)
 	http.ListenAndServe(httpServerPort, handlers.CORS(originsOk, headersOk, methodsOk)(router))
 }
+
+// - in gui:
+// 	- trebuie sa primesc datele corect
+// 	- desenez datele pe care le primesc pe socket
