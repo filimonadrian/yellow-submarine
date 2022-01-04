@@ -229,3 +229,7 @@ func main() {
 	fmt.Printf("HTTP Server is running at http://localhost%s\n", httpServerPort)
 	http.ListenAndServe(httpServerPort, handlers.CORS(originsOk, headersOk, methodsOk)(router))
 }
+
+// TODO:
+// add for in tcp server: even the client disconnects, we need to keep connectivity
+// build linux image
