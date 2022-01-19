@@ -1,6 +1,7 @@
 package main
 
 import (
+	// "io"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -81,8 +82,6 @@ func handleMoveSubmarine(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Fprintf(os.Stdout, "%+v", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	} else if submarine.X+newSubmarine.X < 0 || submarine.Y+newSubmarine.Y < 0 {
-		fmt.Fprintf(os.Stdout, "Illegal position for submarine!: %+v\n", submarine)
 	} else {
 		submarine.X += newSubmarine.X
 		submarine.Y += newSubmarine.Y
@@ -178,24 +177,14 @@ func initTcpServer() {
 		fmt.Println("Error starting socket server: " + err.Error())
 	}
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Error listening to client: " + err.Error())
-		}
-		tcpConn = conn
-
-		sendData(tcpConn, getGuiObject("submarine", submarine.X, submarine.Y))
-		time.Sleep(time.Duration(1) * time.Second)
-		sendData(tcpConn, getGuiObject("artifact", artifact.X, artifact.Y))
-
-		for _, currentFish := range fish {
-			time.Sleep(time.Duration(1) * time.Second)
-			sendData(tcpConn, getGuiObject("fish", currentFish.X, currentFish.Y))
-		}
-
-		fmt.Println(conn.RemoteAddr().String() + ": client connected")
+	conn, err := ln.Accept()
+	if err != nil {
+		fmt.Println("Error listening to client: " + err.Error())
 	}
+	tcpConn = conn
+
+	sendData(tcpConn, getGuiObject("submarine", submarine.X, submarine.Y))
+	fmt.Println(conn.RemoteAddr().String() + ": client connected")
 }
 
 func sendData(conn net.Conn, data string) {
@@ -222,15 +211,10 @@ func main() {
 	var router = mux.NewRouter()
 	router.Use(commonMiddleware)
 
-	artifact = Object{
-		X: -1,
-		Y: -1,
-	}
-
 	fish = make([]Object, 0)
 	submarine = Object{
 		X: generateRandom(50),
-		Y: generateRandom(20),
+		Y: generateRandom(50),
 	}
 
 	router.HandleFunc("/api/submarine", handleGetSubmarine).Methods("GET")
@@ -245,3 +229,7 @@ func main() {
 	fmt.Printf("HTTP Server is running at http://localhost%s\n", httpServerPort)
 	http.ListenAndServe(httpServerPort, handlers.CORS(originsOk, headersOk, methodsOk)(router))
 }
+
+// TODO:
+// add for in tcp server: even the client disconnects, we need to keep connectivity
+// build linux image

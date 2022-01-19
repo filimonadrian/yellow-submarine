@@ -57,12 +57,12 @@ func initTcpClient() {
 		if !alreadyConnected {
 			conn, err := net.Dial("tcp", "127.0.0.1:8000")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
+				// fmt.Println(err.Error())
 				time.Sleep(time.Duration(5) * time.Second)
 				continue
 			}
 			tcpConn = conn
-			fmt.Fprintf(os.Stderr, "%v : connected\n", conn.RemoteAddr().String())
+			// fmt.Println(conn.RemoteAddr().String() + ": connected")
 			connectedSync.Lock()
 			connected = true
 			connectedSync.Unlock()
@@ -76,19 +76,19 @@ func receiveData(conn net.Conn) {
 	for {
 		message, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v : disconnected\n", conn.RemoteAddr().String())
+			// fmt.Println(conn.RemoteAddr().String() + ": disconnected")
 			conn.Close()
 			connectedSync.Lock()
 			connected = false
 			connectedSync.Unlock()
-			fmt.Fprintf(os.Stderr, "%v : : end receiving data\n", conn.RemoteAddr().String())
+			// fmt.Println(conn.RemoteAddr().String() + ": end receiving data")
 			return
 		}
 
 		var newObj GuiObject
 		err = json.Unmarshal([]byte(message), &newObj)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
+			// fmt.Println(err.Error())
 		}
 
 		switch {
@@ -184,15 +184,10 @@ func eventLoop(s tcell.Screen, quit chan struct{}) {
 
 func main() {
 
-	NCURSES_TTY := "/dev/ttyAMA0"
-	inf, err := os.OpenFile(NCURSES_TTY, os.O_RDONLY, 0755)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
-	outf, err := os.OpenFile(NCURSES_TTY, os.O_WRONLY, 0755)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
+	NCURSES_TTY := "/dev/tty1"
+	inf, _ := os.OpenFile(NCURSES_TTY, os.O_RDONLY, 0755)
+	outf, _ := os.OpenFile(NCURSES_TTY, os.O_WRONLY, 0755)
+
 	syscall.Dup2(int(inf.Fd()), syscall.Stdin)
 	syscall.Dup2(int(outf.Fd()), syscall.Stdout)
 	syscall.Dup2(int(outf.Fd()), syscall.Stderr)
@@ -234,4 +229,12 @@ func main() {
 
 	go renderLoop(s, quit)
 	eventLoop(s, quit)
+}
+
+func printStruct() {
+	fmt.Printf("%+v\n", submarine)
+	fmt.Printf("%+v\n", artifact)
+	fmt.Printf("%+v\n", fish)
+	fmt.Printf("\n")
+
 }
