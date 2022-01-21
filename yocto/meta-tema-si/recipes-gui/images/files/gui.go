@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	tcell "github.com/gdamore/tcell/v2"
@@ -47,6 +46,7 @@ const (
 	artifactDesign  = "[*]"
 	submarineHeight = 6
 	submarineLength = 35
+	ncursesTTY      = "/dev/ttyAMA0"
 )
 
 func initTcpClient() {
@@ -57,12 +57,12 @@ func initTcpClient() {
 		if !alreadyConnected {
 			conn, err := net.Dial("tcp", "127.0.0.1:8000")
 			if err != nil {
-				// fmt.Println(err.Error())
+				fmt.Fprintf(os.Stderr, "%v\n", err)
 				time.Sleep(time.Duration(5) * time.Second)
 				continue
 			}
 			tcpConn = conn
-			// fmt.Println(conn.RemoteAddr().String() + ": connected")
+			fmt.Fprintf(os.Stderr, "%v : connected\n", conn.RemoteAddr().String())
 			connectedSync.Lock()
 			connected = true
 			connectedSync.Unlock()
@@ -76,19 +76,19 @@ func receiveData(conn net.Conn) {
 	for {
 		message, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
-			// fmt.Println(conn.RemoteAddr().String() + ": disconnected")
+			fmt.Fprintf(os.Stderr, "%v : disconnected\n", conn.RemoteAddr().String())
 			conn.Close()
 			connectedSync.Lock()
 			connected = false
 			connectedSync.Unlock()
-			// fmt.Println(conn.RemoteAddr().String() + ": end receiving data")
+			fmt.Fprintf(os.Stderr, "%v : : end receiving data\n", conn.RemoteAddr().String())
 			return
 		}
 
 		var newObj GuiObject
 		err = json.Unmarshal([]byte(message), &newObj)
 		if err != nil {
-			// fmt.Println(err.Error())
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 		}
 
 		switch {
@@ -149,11 +149,12 @@ func render(s tcell.Screen) {
 }
 
 func renderLoop(s tcell.Screen, quit <-chan struct{}) {
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(300 * time.Millisecond)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
+			s.Sync()
 			render(s)
 		case <-quit:
 			return
@@ -169,7 +170,7 @@ func eventLoop(s tcell.Screen, quit chan struct{}) {
 		switch ev := s.PollEvent().(type) {
 		case *tcell.EventKey:
 			switch ev.Key() {
-			case tcell.KeyEscape, tcell.KeyEnter, tcell.KeyCtrlC:
+			case tcell.KeyCtrlC:
 				close(quit)
 				s.Fini()
 				os.Exit(0)
@@ -184,16 +185,7 @@ func eventLoop(s tcell.Screen, quit chan struct{}) {
 
 func main() {
 
-	NCURSES_TTY := "/dev/tty1"
-	inf, _ := os.OpenFile(NCURSES_TTY, os.O_RDONLY, 0755)
-	outf, _ := os.OpenFile(NCURSES_TTY, os.O_WRONLY, 0755)
-
-	syscall.Dup2(int(inf.Fd()), syscall.Stdin)
-	syscall.Dup2(int(outf.Fd()), syscall.Stdout)
-	syscall.Dup2(int(outf.Fd()), syscall.Stderr)
-
-	defer inf.Close()
-	defer outf.Close()
+	fmt.Fprintf(os.Stdout, "Gui started..:\n")
 
 	os.Setenv("TERM", "linux")
 
@@ -212,7 +204,12 @@ func main() {
 
 	encoding.Register()
 
-	s, e := tcell.NewScreen()
+	tty, err := tcell.NewDevTtyFromDev(ncursesTTY)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create new tty device: %v\n", err)
+	}
+	s, e := tcell.NewTerminfoScreenFromTty(tty)
+
 	if e != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", e)
 		os.Exit(1)
@@ -223,18 +220,9 @@ func main() {
 	}
 	s.SetStyle(defStyle)
 	s.HideCursor()
-	s.Clear()
 
 	go initTcpClient()
 
-	go renderLoop(s, quit)
-	eventLoop(s, quit)
-}
-
-func printStruct() {
-	fmt.Printf("%+v\n", submarine)
-	fmt.Printf("%+v\n", artifact)
-	fmt.Printf("%+v\n", fish)
-	fmt.Printf("\n")
-
+	go eventLoop(s, quit)
+	renderLoop(s, quit)
 }

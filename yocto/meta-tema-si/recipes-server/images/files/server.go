@@ -15,7 +15,7 @@ import (
 
 const (
 	maxFish        = 5
-	httpServerPort = ":8080"
+	httpServerPort = ":80"
 	tcpServerPort  = ":8000"
 )
 

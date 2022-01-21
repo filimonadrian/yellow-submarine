@@ -5,7 +5,7 @@ local_conf_header:
   meta-silabs: |
     DL_DIR = "/home/student/tmp/downloads"
     SSTATE_DIR = "/home/student/sstate-cache"
-#    INHERIT += "rm_work"
+    INHERIT += "rm_work"
 
 machine: qemuarm
 distro: poky

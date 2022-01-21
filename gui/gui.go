@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	tcell "github.com/gdamore/tcell/v2"
@@ -47,6 +46,7 @@ const (
 	artifactDesign  = "[*]"
 	submarineHeight = 6
 	submarineLength = 35
+	ncursesTTY      = "/dev/ttyAMA0"
 )
 
 func initTcpClient() {
@@ -149,11 +149,12 @@ func render(s tcell.Screen) {
 }
 
 func renderLoop(s tcell.Screen, quit <-chan struct{}) {
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(300 * time.Millisecond)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
+			s.Sync()
 			render(s)
 		case <-quit:
 			return
@@ -169,7 +170,7 @@ func eventLoop(s tcell.Screen, quit chan struct{}) {
 		switch ev := s.PollEvent().(type) {
 		case *tcell.EventKey:
 			switch ev.Key() {
-			case tcell.KeyEscape, tcell.KeyEnter, tcell.KeyCtrlC:
+			case tcell.KeyCtrlC:
 				close(quit)
 				s.Fini()
 				os.Exit(0)
@@ -184,21 +185,7 @@ func eventLoop(s tcell.Screen, quit chan struct{}) {
 
 func main() {
 
-	NCURSES_TTY := "/dev/ttyAMA0"
-	inf, err := os.OpenFile(NCURSES_TTY, os.O_RDONLY, 0755)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
-	outf, err := os.OpenFile(NCURSES_TTY, os.O_WRONLY, 0755)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-	}
-	syscall.Dup2(int(inf.Fd()), syscall.Stdin)
-	syscall.Dup2(int(outf.Fd()), syscall.Stdout)
-	syscall.Dup2(int(outf.Fd()), syscall.Stderr)
-
-	defer inf.Close()
-	defer outf.Close()
+	fmt.Fprintf(os.Stdout, "Gui started..:\n")
 
 	os.Setenv("TERM", "linux")
 
@@ -217,7 +204,12 @@ func main() {
 
 	encoding.Register()
 
-	s, e := tcell.NewScreen()
+	tty, err := tcell.NewDevTtyFromDev(ncursesTTY)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot create new tty device: %v\n", err)
+	}
+	s, e := tcell.NewTerminfoScreenFromTty(tty)
+
 	if e != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", e)
 		os.Exit(1)
@@ -228,10 +220,9 @@ func main() {
 	}
 	s.SetStyle(defStyle)
 	s.HideCursor()
-	s.Clear()
 
 	go initTcpClient()
 
-	go renderLoop(s, quit)
-	eventLoop(s, quit)
+	go eventLoop(s, quit)
+	renderLoop(s, quit)
 }

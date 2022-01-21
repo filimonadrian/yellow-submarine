@@ -3,8 +3,6 @@ IMAGE_FILE="rootfs.img"
 KERNEL_FILE="kernel-yocto"
 DEVICE_TREE="versatile-pb.dtb"
 
-# IMAGE_FILE="/home/student/yocto/build/tmp/deploy/images/qemuarm/zImage"
-# KERNEL_FILE="/home/student/yocto/build/tmp/deploy/images/qemuarm/core-image-base-qemuarm-20220118140810.rootfs.ext4"
 
 # to make the script usable from source dir, use after calling `make bin_archive`
 BIN_TMP_DIR="build/tmp/bin_archive/"
@@ -21,7 +19,7 @@ QEMU_ARGS=( # yep, this is a bash array
 	-drive "file=$IMAGE_FILE,if=none,media=disk,format=raw,id=disk0"
 	-device "virtio-blk-pci,drive=disk0,disable-modern=on"
 	-kernel "$KERNEL_FILE" 
-	-append "root=/dev/vda console=ttyAMA0 ip=dhcp rw panic=1" ip=dhcp
+	-append "root=/dev/vda console=ttyAMA0 ip=dhcp rw panic=1"
 	-serial mon:stdio -nographic
 	-monitor telnet::45454,server,nowait
 	-no-reboot

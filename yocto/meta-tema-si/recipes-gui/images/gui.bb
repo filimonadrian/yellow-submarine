@@ -24,6 +24,6 @@ do_install() {
         install -d ${D}${sysconfdir}/rc4.d
         install -d ${D}${sysconfdir}/rc5.d
 
-        ln -sf ../init.d/gui-init ${D}${sysconfdir}/rc5.d/S95gui-init
+        ln -sf ../init.d/gui-init ${D}${sysconfdir}/rc5.d/S92gui-init
 }
 
